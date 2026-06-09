@@ -64,6 +64,8 @@ async def analyze_law(state: LawState) -> dict:
         ),
         HumanMessage(content=state["question"]),
     ]
+    from common.tracer import push_trace
+    await push_trace("law-agent", "LLM", "analyze", "Analyzing legal aspects of the question", state["trace_id"])
     result = await llm.ainvoke(messages)
     return {"law_analysis": result.content}
 
@@ -93,6 +95,8 @@ async def check_routing(state: LawState) -> dict:
         ),
         HumanMessage(content=state["question"]),
     ]
+    from common.tracer import push_trace
+    await push_trace("law-agent", "LLM", "routing", "Determining if sub-agents are needed", state["trace_id"])
     result = await llm.ainvoke(messages)
     raw = result.content.strip()
 
@@ -136,8 +140,10 @@ async def call_tax(state: LawState) -> dict:
     """Delegate to the Tax Agent via A2A."""
     from common.a2a_client import delegate
     from common.registry_client import discover
+    from common.tracer import push_trace
 
     try:
+        await push_trace("law-agent", "registry", "discover", "Querying Registry for 'tax_question' agent", state["trace_id"])
         endpoint = await discover("tax_question")
         result = await delegate(
             endpoint=endpoint,
@@ -157,8 +163,10 @@ async def call_compliance(state: LawState) -> dict:
     """Delegate to the Compliance Agent via A2A."""
     from common.a2a_client import delegate
     from common.registry_client import discover
+    from common.tracer import push_trace
 
     try:
+        await push_trace("law-agent", "registry", "discover", "Querying Registry for 'compliance_question' agent", state["trace_id"])
         endpoint = await discover("compliance_question")
         result = await delegate(
             endpoint=endpoint,
@@ -200,6 +208,8 @@ async def aggregate(state: LawState) -> dict:
         ),
         HumanMessage(content=combined),
     ]
+    from common.tracer import push_trace
+    await push_trace("law-agent", "LLM", "aggregate", "Synthesizing analyses into final answer", state["trace_id"])
     result = await llm.ainvoke(messages)
     return {"final_answer": result.content}
 

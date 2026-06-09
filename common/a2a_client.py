@@ -6,6 +6,8 @@ sends a message to another A2A agent and returns the text response.
 
 from __future__ import annotations
 
+import os
+import asyncio
 import logging
 from uuid import uuid4
 
@@ -21,8 +23,11 @@ from a2a.types import (
     SendMessageRequest,
     TextPart,
 )
+from common.tracer import push_trace
 
 logger = logging.getLogger(__name__)
+
+A2A_API_KEY = os.getenv("A2A_API_KEY", "A2A-SECRET-KEY")
 
 
 async def delegate(
@@ -44,42 +49,68 @@ async def delegate(
     Returns:
         The agent's text response, or an empty string if none could be extracted.
     """
-    async with httpx.AsyncClient(timeout=300.0) as http_client:
-        # Fetch agent card
-        card_url = f"{endpoint}/.well-known/agent.json"
-        card_resp = await http_client.get(card_url)
-        card_resp.raise_for_status()
-        agent_card = AgentCard.model_validate(card_resp.json())
+    max_retries = 3
+    base_delay = 2.0
 
-        # Build deprecated (legacy) A2AClient — straightforward for send_message
-        client = A2AClient(httpx_client=http_client, agent_card=agent_card)
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=300.0, headers={"X-API-Key": A2A_API_KEY}) as http_client:
+                # Fetch agent card
+                card_url = f"{endpoint}/.well-known/agent.json"
+                card_resp = await http_client.get(card_url)
+                card_resp.raise_for_status()
+                agent_card = AgentCard.model_validate(card_resp.json())
 
-        # Build message with trace metadata
-        message = Message(
-            role=Role.user,
-            parts=[Part(root=TextPart(text=question))],
-            message_id=str(uuid4()),
-            context_id=context_id,
-            metadata={
-                "trace_id": trace_id,
-                "context_id": context_id,
-                "delegation_depth": depth,
-            },
-        )
+                # Build deprecated (legacy) A2AClient
+                client = A2AClient(httpx_client=http_client, agent_card=agent_card)
 
-        request = SendMessageRequest(
-            id=str(uuid4()),
-            params=MessageSendParams(message=message),
-        )
+                message = Message(
+                    role=Role.user,
+                    parts=[Part(root=TextPart(text=question))],
+                    message_id=str(uuid4()),
+                    context_id=context_id,
+                    metadata={
+                        "trace_id": trace_id,
+                        "context_id": context_id,
+                        "delegation_depth": depth,
+                    },
+                )
 
-        logger.debug(
-            "Delegating to %s (depth=%d, trace=%s)", endpoint, depth, trace_id
-        )
+                request = SendMessageRequest(
+                    id=str(uuid4()),
+                    params=MessageSendParams(message=message),
+                )
 
-        response = await client.send_message(request)
+                logger.debug(
+                    "Delegating to %s (depth=%d, trace=%s)", endpoint, depth, trace_id
+                )
+                
+                # Derive target name from endpoint roughly for UI
+                port = endpoint.split(":")[-1]
+                target_agent = "law-agent" if port == "10101" else "tax-agent" if port == "10102" else "compliance-agent"
+                # Push trace
+                await push_trace("agent", target_agent, "delegating", question, trace_id)
 
-        # Extract text from SendMessageResponse
-        return _extract_text(response)
+                response = await client.send_message(request)
+
+                # Extract text
+                result_text = _extract_text(response)
+                
+                await push_trace(target_agent, "agent", "returned", result_text, trace_id)
+                
+                return result_text
+
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as exc:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Failed to delegate to %s (attempt %d/%d): %s. Retrying in %.1fs...",
+                    endpoint, attempt + 1, max_retries, exc, delay
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error("Failed to delegate to %s after %d retries.", endpoint, max_retries)
+                raise
 
 
 def _extract_text(response: object) -> str:

@@ -7,6 +7,7 @@ the results, and may call more tools before giving a final answer.
 Uses LangGraph's create_react_agent for the Think -> Act -> Observe loop.
 """
 
+from doctest import debug
 import asyncio
 import os
 import sys
@@ -171,6 +172,22 @@ def check_compliance_requirements(industry: str, company_size: str) -> str:
         f"  {size_note}"
     )
 
+@tool
+def search_case_law(keywords: str) -> str:
+    """Tìm kiếm án lệ theo từ khóa.
+    
+    Args:
+        keywords: Từ khóa tìm kiếm
+    """
+    cases = {
+        "breach": "Hadley v. Baxendale (1854) - Consequential damages",
+        "negligence": "Donoghue v. Stevenson (1932) - Duty of care",
+        "contract": "Carlill v. Carbolic Smoke Ball Co (1893) - Unilateral contract",
+    }
+    for key, case in cases.items():
+        if key in keywords.lower():
+            return case
+    return "Không tìm thấy án lệ phù hợp"
 
 TOOLS = [search_legal_database, calculate_penalty, check_compliance_requirements]
 
@@ -184,6 +201,7 @@ SYSTEM_PROMPT = (
     "calculating penalties, and checking compliance requirements. Use these tools to build "
     "a comprehensive analysis. Search for each legal area separately — data privacy, tax, "
     "and compliance. Keep your final answer under 500 words."
+    "Always provide answers in Vietnamese, except for the function names that need to be called."
 )
 
 
@@ -205,7 +223,7 @@ async def main():
     print("-" * 70)
 
     llm = get_llm()
-    graph = create_react_agent(model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT)
+    graph = create_react_agent(model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT, debug=True)
 
     inputs = {"messages": [{"role": "user", "content": QUESTION}]}
 

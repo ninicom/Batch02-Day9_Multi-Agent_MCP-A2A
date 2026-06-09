@@ -9,6 +9,7 @@ import os
 import httpx
 
 REGISTRY_URL = os.getenv("REGISTRY_URL", "http://localhost:10000")
+A2A_API_KEY = os.getenv("A2A_API_KEY", "A2A-SECRET-KEY")
 
 
 async def discover(task: str) -> str:
@@ -23,7 +24,7 @@ async def discover(task: str) -> str:
     Raises:
         httpx.HTTPStatusError: If no agent is found or the registry is unreachable.
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=10.0, headers={"X-API-Key": A2A_API_KEY}) as client:
         resp = await client.get(f"{REGISTRY_URL}/discover/{task}")
         resp.raise_for_status()
         return resp.json()["endpoint"]
@@ -39,6 +40,6 @@ async def register(agent_info: dict) -> None:
     Raises:
         httpx.HTTPStatusError: If registration fails.
     """
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=10.0, headers={"X-API-Key": A2A_API_KEY}) as client:
         resp = await client.post(f"{REGISTRY_URL}/register", json=agent_info)
         resp.raise_for_status()

@@ -19,6 +19,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from common.llm import get_llm
+from IPython.display import Image, display
+
 
 # ---------------------------------------------------------------------------
 # Tools for specialist sub-agents
@@ -122,6 +124,18 @@ class LegalState(TypedDict):
 # ---------------------------------------------------------------------------
 # Node implementations
 # ---------------------------------------------------------------------------
+async def privacy_agent(state: LegalState) -> dict:
+    """Agent chuyên về luật bảo vệ dữ liệu cá nhân."""
+    llm = get_llm()
+    
+    prompt = f"""Bạn là chuyên gia về GDPR và luật bảo vệ dữ liệu cá nhân.                
+            Câu hỏi gốc: {state['question']}
+            Phân tích pháp lý: {state.get('law_analysis', 'N/A')}
+            Hãy phân tích các vấn đề về privacy và GDPR (nếu có).
+            """    
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    return {"privacy_analysis": response.content}
+
 
 async def analyze_law(state: LegalState) -> dict:
     """Lead attorney analyses the legal aspects of the question."""
@@ -133,6 +147,7 @@ async def analyze_law(state: LegalState) -> dict:
                 "You are a senior corporate litigation attorney specialising in contract law, "
                 "tort law, and general business law. Analyse the legal aspects of the question "
                 "thoroughly. Keep your analysis under 200 words."
+                "Always provide answers in Vietnamese, except for the function names that need to be called."
             )
         ),
         HumanMessage(content=state["question"]),
@@ -145,6 +160,8 @@ async def analyze_law(state: LegalState) -> dict:
 async def check_routing(state: LegalState) -> dict:
     """Routing node: determine which specialist sub-agents are needed."""
     print("\n  [Node: check_routing] Determining which specialists are needed...")
+    
+    # 1. Đoạn này vẫn dùng LLM để phân tích "tax" và "compliance" như cũ
     llm = get_llm()
     messages = [
         SystemMessage(
@@ -174,9 +191,19 @@ async def check_routing(state: LegalState) -> dict:
 
     needs_tax = bool(parsed.get("needs_tax", True))
     needs_compliance = bool(parsed.get("needs_compliance", True))
-    print(f"  [Node: check_routing] needs_tax={needs_tax}, needs_compliance={needs_compliance}")
-    return {"needs_tax": needs_tax, "needs_compliance": needs_compliance}
 
+    # 2. THÊM LOGIC RULE-BASED: Tự động check từ khóa cho privacy_agent
+    question_lower = state["question"].lower()
+    needs_privacy = any(kw in question_lower for kw in ["data", "privacy", "gdpr", "dữ liệu"])
+
+    print(f"  [Node: check_routing] needs_tax={needs_tax}, needs_compliance={needs_compliance}, needs_privacy={needs_privacy}")
+    
+    # 3. Trả về cả 3 cờ để cập nhật vào Graph State
+    return {
+        "needs_tax": needs_tax, 
+        "needs_compliance": needs_compliance,
+        "needs_privacy": needs_privacy
+    }
 
 def route_to_specialists(state: LegalState) -> list[Send]:
     """Routing function: dispatch parallel Send objects to specialist nodes."""
@@ -257,6 +284,7 @@ async def aggregate(state: LegalState) -> dict:
                 "comprehensive, well-structured response. Combine the following analyses "
                 "into a cohesive answer with clear sections. Avoid redundancy. "
                 "Keep your response under 500 words."
+                "Always provide answers in Vietnamese, except for the function names that need to be called."
             )
         ),
         HumanMessage(content=combined),
@@ -279,6 +307,7 @@ def create_graph():
     graph.add_node("call_tax_specialist", call_tax_specialist)
     graph.add_node("call_compliance_specialist", call_compliance_specialist)
     graph.add_node("aggregate", aggregate)
+    graph.add_node("privacy_agent", privacy_agent)
 
     graph.set_entry_point("analyze_law")
     graph.add_edge("analyze_law", "check_routing")
@@ -356,7 +385,14 @@ async def main():
     print("and deploys each agent as an independent A2A service. Run it with:")
     print("  ./start_all.sh && python test_client.py")
     print("=" * 70)
+    # Lấy dữ liệu ảnh dạng binary (bytes) từ LangGraph
+    image_bytes = graph.get_graph().draw_mermaid_png()
 
+    # Ghi dữ liệu đó vào một file ảnh .png
+    with open("legal_graph.png", "wb") as f:
+        f.write(image_bytes)
+
+    print("Đã lưu sơ đồ graph thành công vào file 'legal_graph.png'!")
 
 if __name__ == "__main__":
     load_dotenv()

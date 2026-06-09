@@ -65,8 +65,11 @@ uv run python stages/stage_1_direct_llm/main.py
 Mở file `stages/stage_1_direct_llm/main.py` và trả lời:
 
 1. LLM được khởi tạo như thế nào? (Tìm hàm `get_llm()`)
+* Trả lời: Trong hàm get_llm(), mô hình LLM được khởi tạo bằng cách sử dụng lớp ChatOpenAI nhập từ thư viện langchain_openai
 2. Message được gửi đến LLM có cấu trúc gì?
+* Trả lời: Gồm có 2 message, một system message và một human message. System message chứa system prompt và human message chứa user question.
 3. Tại sao cần có `SystemMessage` và `HumanMessage`?
+* Trả lời: SystemMessage được sử dụng để cung cấp hướng dẫn và vai trò cho LLM (ví dụ: "Bạn là một chuyên gia pháp lý"), giúp định hướng phong cách và nội dung phản hồi. HumanMessage chứa nội dung câu hỏi hoặc yêu cầu thực tế từ người dùng. Việc kết hợp cả hai giúp LLM hiểu rõ ngữ cảnh và thực hiện tác vụ cụ thể theo yêu cầu.
 
 **Bài Tập 1.1:** Thay đổi câu hỏi
 
@@ -105,8 +108,11 @@ uv run python stages/stage_2_rag_tools/main.py
 Mở `stages/stage_2_rag_tools/main.py` và tìm:
 
 1. Hàm `@tool` decorator được dùng ở đâu?
+* Trả lời: Decorator @tool (thường được import từ langchain_core.tools hoặc langchain.agents) được dùng ngay phía trên các hàm Python được cấp quyền cho LLM sử dụng.
 2. `LEGAL_KNOWLEDGE` được cấu trúc như thế nào?
+* Trả lời: `LEGAL_KNOWLEDGE` là một list chứa các dictionary, mỗi dictionary có 3 key: id (mã định danh), keywords (từ khóa tìm kiếm) và text (nội dung thông tin).
 3. LLM được bind với tools ra sao? (Tìm `.bind_tools()`)
+* Trả lời: LLM được bind với tools bằng phương thức `bind_tools()` trước khi invoke.
 
 **Bài Tập 2.1:** Thêm knowledge base entry
 
@@ -183,8 +189,14 @@ Chú ý cách agent tự động:
 Mở `stages/stage_3_single_agent/main.py`:
 
 1. Tìm `create_react_agent()` — đây là magic function
+* Trả lời: Hàm create_react_agent trong langchain.agents (deprecated) hoặc langchain.agents.create_agent (langraph) nhận vào 3 tham số chính: model, tools và prompt. 
+- model: Mô hình LLM được sử dụng để sinh ra câu trả lời.
+- tools: Danh sách các công cụ mà agent có thể sử dụng.
+- prompt: System prompt định nghĩa vai trò, mục tiêu và cách thức hoạt động của agent.
 2. So sánh với Stage 2: không còn manual tool loop
+* Trả lời: So sánh với Stage 2, Stage 3 không còn manual tool loop (vòng lặp thủ công để gọi tool và xử lý kết quả) mà sử dụng create_react_agent() để tự động hóa quá trình này.
 3. Xem `agent_executor.invoke()` — chỉ cần gọi một lần
+* Trả lời: Agent executor được invoke một lần duy nhất và tự động xử lý toàn bộ chu trình Think-Act-Observe cho đến khi có câu trả lời cuối cùng.
 
 **Bài Tập 3.1:** Thêm tool tra cứu án lệ
 
@@ -212,7 +224,7 @@ Thêm vào tools list và test với câu hỏi về breach of contract.
 **Bài Tập 3.2:** Debug agent reasoning
 
 Thêm `verbose=True` vào `create_react_agent()` để xem chi tiết quá trình suy nghĩ của agent.
-
+* Trả lời: phần đầu ra của mô chứa toàn bộ thông tin của các step, các tham số gọi tool, các kết quả trả về được định nghĩa dưới dạng JSON và hiển thị chi tiết.
 ---
 
 ## Phần 4: Multi-Agent In-Process (30 phút)
@@ -246,9 +258,13 @@ uv run python stages/stage_4_milti_agent/main.py
 Mở `stages/stage_4_milti_agent/main.py`:
 
 1. Tìm `class State(TypedDict)` — đây là shared state
+* Trả lời: Đây là nơi định nghĩa các biến mà tất cả agents trong graph có thể truy cập và chỉnh sửa, bao gồm question, law_analysis, needs_tax, needs_compliance, tax_result, compliance_result và final_answer.
 2. Tìm các agent functions: `law_agent`, `tax_agent`, `compliance_agent`
+* Trả lời: Đây là các hàm mà mỗi agent sẽ thực thi, mỗi hàm sẽ nhận vào State và trả về một dict chứa các biến cần cập nhật vào State.
 3. Tìm `Send()` API — dispatch parallel tasks
+* Trả lời: Đây là API của langgraph dùng để gửi các tác vụ song song, cho phép nhiều agent làm việc cùng một lúc.
 4. Xem `graph.add_node()` và `graph.add_edge()`
+* Trả lời: Đây là các hàm dùng để xây dựng graph, add_node() để thêm node vào graph và add_edge() để thêm edge vào graph.
 
 **Bước 3:** Vẽ graph
 
@@ -383,9 +399,16 @@ Sửa `tax_agent/graph.py`, thay đổi system prompt để agent trả lời ng
 ### Câu Hỏi Ôn Tập
 
 1. Khi nào nên dùng single agent thay vì multi-agent?
+* Trả lời: Nên dùng single agent cho các tác vụ đơn giản, có phạm vi hẹp (narrow domain) mà một agent cùng với vài tools cụ thể có thể giải quyết được. Điều này giúp giảm độ trễ (latency), tiết kiệm chi phí gọi LLM và dễ debug hơn so với việc phối hợp (orchestrate) nhiều agents.
+
 2. Ưu điểm của A2A protocol so với gRPC hoặc REST thông thường?
+* Trả lời: A2A protocol được thiết kế đặc thù và tối ưu hóa cho giao tiếp ngữ nghĩa (semantic communication) giữa các AI Agents. Nó chuẩn hóa cách đóng gói ngữ cảnh hội thoại, hỗ trợ phân định rõ task/tool, theo dõi luồng suy luận qua `trace_id` và giới hạn lặp qua `depth`. Nó cũng có thể tích hợp dễ dàng các khả năng truyền stream token – những tính năng mà nếu dùng REST/gRPC truyền thống sẽ phải tự thiết kế và cấu hình thủ công rất phức tạp.
+
 3. Làm thế nào để prevent infinite delegation loops trong A2A?
+* Trả lời: Có thể ngăn chặn infinite loops (vòng lặp vô hạn) bằng cách: truyền và liên tục kiểm tra/tăng biến `depth` (giới hạn độ sâu của chuỗi gọi) trong mỗi lần delegate; gắn `trace_id` xuyên suốt request; hoặc lưu lại danh sách/history các agent đã tham gia delegation vào context để một agent có thể nhận biết và từ chối delegate ngược lại cho agent đã từng gọi mình.
+
 4. Tại sao cần Registry service? Có thể hardcode URLs không?
+* Trả lời: Cần Registry service (Service Discovery) để hệ thống trở nên linh hoạt, hỗ trợ mở rộng (scale) và có khả năng chịu lỗi (fault-tolerant). Các agents có thể tự động tìm thấy nhau mà không cần biết địa chỉ chính xác. Hoàn toàn có thể hardcode URLs cho các dự án thử nghiệm (PoC) nhỏ gọn, nhưng trong một hệ thống thực tế (production), hardcode sẽ làm hệ thống trở nên cứng nhắc, không thể tự động load-balance và rất khó bảo trì khi cấu hình mạng thay đổi.
 
 ### Bài Tập Nâng Cao (Tự Học)
 

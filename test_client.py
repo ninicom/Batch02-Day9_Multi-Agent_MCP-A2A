@@ -1,8 +1,3 @@
-"""End-to-end test client for the Legal Multi-Agent System.
-
-Sends a legal question to the Customer Agent and prints the response.
-"""
-
 import asyncio
 import os
 import sys
@@ -13,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CUSTOMER_AGENT_URL = os.getenv("CUSTOMER_AGENT_URL", "http://localhost:10100")
+A2A_API_KEY = os.getenv("A2A_API_KEY", "A2A-SECRET-KEY")
 
 QUESTION = (
     "If a company breaks a contract and avoids taxes, "
@@ -25,7 +21,7 @@ async def main() -> None:
     print(f"Question: {QUESTION}")
     print("-" * 60)
 
-    async with httpx.AsyncClient(timeout=300.0) as http_client:
+    async with httpx.AsyncClient(timeout=120.0, headers={"X-API-Key": A2A_API_KEY}) as http_client:
         # Resolve agent card
         card_url = f"{CUSTOMER_AGENT_URL}/.well-known/agent.json"
         try:
@@ -37,8 +33,17 @@ async def main() -> None:
             print("Make sure all services are running (./start_all.sh)")
             sys.exit(1)
 
-        from a2a.types import AgentCard, Message, Part, Role, TextPart, MessageSendParams
         from a2a.client import A2AClient
+        from a2a.types import (
+            AgentCard,
+            Message,
+            MessageSendParams as MSP,
+            Part,
+            Role,
+            SendMessageRequest,
+            TextPart,
+        )
+        from common.tracer import push_trace
         from uuid import uuid4
 
         agent_card = AgentCard.model_validate(card_resp.json())
@@ -48,19 +53,21 @@ async def main() -> None:
         # Build the legacy A2AClient
         client = A2AClient(httpx_client=http_client, agent_card=agent_card)
 
-        # Construct the message
-        from a2a.types import SendMessageRequest, MessageSendParams as MSP
-        message = Message(
-            role=Role.user,
-            parts=[Part(root=TextPart(text=QUESTION))],
-            message_id=str(uuid4()),
-        )
+        print("Sending request (this may take 30-60s while agents chain)...\n")
+        trace_id = str(uuid4())
+        await push_trace("User", "customer-agent", "ask", QUESTION, trace_id)
+        
         request = SendMessageRequest(
             id=str(uuid4()),
-            params=MSP(message=message),
+            params=MSP(message=Message(
+                role=Role.user,
+                parts=[Part(root=TextPart(text=QUESTION))],
+                message_id=str(uuid4()),
+                context_id=str(uuid4()),
+                metadata={"trace_id": trace_id},
+            )),
         )
 
-        print("Sending request (this may take 30-60s while agents chain)...\n")
         response = await client.send_message(request)
 
         # Parse response
@@ -69,19 +76,19 @@ async def main() -> None:
             root = response.root
             if hasattr(root, "result"):
                 result = root.result
-                # Task with artifacts
                 if hasattr(result, "artifacts") and result.artifacts:
                     for artifact in result.artifacts:
                         for part in artifact.parts:
                             p = part.root if hasattr(part, "root") else part
                             if hasattr(p, "text"):
                                 result_text += p.text
-                # Message with parts
                 elif hasattr(result, "parts") and result.parts:
                     for part in result.parts:
                         p = part.root if hasattr(part, "root") else part
                         if hasattr(p, "text"):
                             result_text += p.text
+                            
+        await push_trace("customer-agent", "User", "reply", result_text, trace_id)
 
         if result_text:
             print("RESPONSE:")

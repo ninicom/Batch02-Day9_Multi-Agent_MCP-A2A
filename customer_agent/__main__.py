@@ -91,6 +91,9 @@ async def main() -> None:
         http_handler=request_handler,
     )
     app = app_builder.build()
+    
+    from common.auth import api_key_middleware
+    app.middleware("http")(api_key_middleware)
 
     config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
     server = uvicorn.Server(config)

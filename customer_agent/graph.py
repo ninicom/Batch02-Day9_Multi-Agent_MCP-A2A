@@ -16,10 +16,14 @@ from typing import Any
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.memory import MemorySaver
 
 from common.llm import get_llm
 
 logger = logging.getLogger(__name__)
+
+# Global memory to persist conversations across invocations
+memory = MemorySaver()
 
 CUSTOMER_SYSTEM_PROMPT = """You are a helpful legal assistant at the front desk of a multi-agent
 legal services platform. Your job is to:
@@ -65,6 +69,7 @@ def build_graph(trace_id: str, context_id: str, depth: int) -> Any:
         """
         from common.a2a_client import delegate
         from common.registry_client import discover
+        from common.tracer import push_trace
 
         logger.info(
             "Customer delegate_to_legal_agent | trace=%s context=%s depth=%d",
@@ -72,7 +77,12 @@ def build_graph(trace_id: str, context_id: str, depth: int) -> Any:
         )
 
         try:
+            await push_trace("customer-agent", "registry", "discover", "Querying Registry for 'legal_question' agent", trace_id)
             endpoint = await discover("legal_question")
+            
+            # Since LLM is used to decide the tool call, let's also trace the LLM
+            await push_trace("customer-agent", "LLM", "invoke", f"Decided to call legal agent for: {question}", trace_id)
+            
             result = await delegate(
                 endpoint=endpoint,
                 question=question,
@@ -92,5 +102,6 @@ def build_graph(trace_id: str, context_id: str, depth: int) -> Any:
         model=llm,
         tools=[delegate_to_legal_agent],
         prompt=CUSTOMER_SYSTEM_PROMPT,
+        checkpointer=memory,
     )
     return graph
